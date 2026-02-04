@@ -115,8 +115,8 @@ def test_checkpoint_string_modes_still_work():
 def test_checkpoint_invalid_string():
     """Test that invalid string raises error."""
     model = nn.Sequential(nn.Linear(1, 1))
-    
-    with pytest.raises(ValueError, match="checkpoint must be a string"):
+
+    with pytest.raises(ValueError, match="checkpoint is not one of 'always', 'except_last', or 'never'"):
         GPipe(model, balance=[1], devices=['cpu'], chunks=2, checkpoint='invalid')
 
 

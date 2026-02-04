@@ -201,7 +201,7 @@ class Pipeline:
                 checkpoint = (j in checkpoint_partitions)
             else:
                 checkpoint = (i < checkpoint_stop)
-                
+
             if checkpoint:
                 def function(input: TensorOrTensors,
                              partition: nn.Sequential = partition,

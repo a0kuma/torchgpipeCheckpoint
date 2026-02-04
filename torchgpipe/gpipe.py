@@ -233,17 +233,21 @@ class GPipe(Module):
             raise ValueError('number of chunks must be positive integer')
 
         # Validate and normalize checkpoint parameter
-        # First, try to treat it as a string or string-like object
-        try:
-            checkpoint_str = str(checkpoint)
-            # If it's a valid string mode, use it
-            if checkpoint_str in ['always', 'except_last', 'never']:
-                checkpoint_normalized: Union[str, Set[int]] = checkpoint_str
-            elif isinstance(checkpoint, str):
-                # It's a string but not a valid mode
-                raise ValueError("checkpoint is not one of 'always', 'except_last', or 'never'")
+        checkpoint_normalized: Union[str, Set[int]]
+        
+        # Check if it's a string (or string-like) checkpoint mode
+        if isinstance(checkpoint, str):
+            if checkpoint in ['always', 'except_last', 'never']:
+                checkpoint_normalized = checkpoint
             else:
-                # It's not a string, try to treat it as an iterable of partition indices
+                raise ValueError("checkpoint is not one of 'always', 'except_last', or 'never'")
+        else:
+            # Try to convert to string in case it's a string-like object (e.g., MyString)
+            checkpoint_str = str(checkpoint)
+            if checkpoint_str in ['always', 'except_last', 'never']:
+                checkpoint_normalized = checkpoint_str
+            else:
+                # It's not a valid string mode, try to treat it as an iterable of partition indices
                 try:
                     checkpoint_set = set(checkpoint)
                     if not all(isinstance(i, int) for i in checkpoint_set):
@@ -254,18 +258,6 @@ class GPipe(Module):
                         "checkpoint must be a string ('always', 'except_last', 'never') "
                         "or an iterable of partition indices"
                     ) from e
-        except Exception:
-            # If str() conversion fails, try as iterable
-            try:
-                checkpoint_set = set(checkpoint)
-                if not all(isinstance(i, int) for i in checkpoint_set):
-                    raise ValueError("checkpoint list must contain only integers")
-                checkpoint_normalized = checkpoint_set
-            except (TypeError, ValueError) as e:
-                raise ValueError(
-                    "checkpoint must be a string ('always', 'except_last', 'never') "
-                    "or an iterable of partition indices"
-                ) from e
 
         verify_module(module)
 
