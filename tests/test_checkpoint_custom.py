@@ -1,4 +1,4 @@
-"""Test custom checkpoint functionality with partition indices."""
+"""Test custom checkpoint functionality with layer indices."""
 import pytest
 import torch
 from torch import nn
@@ -27,8 +27,8 @@ def count_grad_fn(grad_fn, name, visited=None):
 
 
 def test_checkpoint_with_list():
-    """Test checkpoint with list of partition indices."""
-    # Create a model with 4 partitions
+    """Test checkpoint with list of layer indices."""
+    # Create a model with 4 layers
     model = nn.Sequential(
         nn.Linear(1, 1),
         nn.Linear(1, 1),
@@ -36,10 +36,12 @@ def test_checkpoint_with_list():
         nn.Linear(1, 1),
     )
     
-    # Checkpoint only partitions 1 and 2 (borders 0 and 3 will be added automatically)
+    # Checkpoint layers 1 and 2
+    # With balance=[1,1,1,1], layer indices = partition indices
+    # Borders (partitions 0 and 3) will be added automatically
     gpipe = GPipe(model, balance=[1, 1, 1, 1], devices=['cpu']*4, chunks=2, checkpoint=[1, 2])
     
-    # Check that checkpoint is stored as a set
+    # Check that checkpoint is stored as a set (layer indices)
     assert isinstance(gpipe.checkpoint, set)
     assert gpipe.checkpoint == {1, 2}
     
@@ -47,13 +49,12 @@ def test_checkpoint_with_list():
     input_data = torch.rand(2, 1)
     output = gpipe(input_data)
     
-    # All 4 partitions should be checkpointed (borders are always added)
     # With chunks=2, we expect checkpoint functions in the graph
     assert count_grad_fn(output.grad_fn, 'CheckpointBackward') > 0
 
 
 def test_checkpoint_with_tuple():
-    """Test checkpoint with tuple of partition indices."""
+    """Test checkpoint with tuple of layer indices."""
     model = nn.Sequential(
         nn.Linear(1, 1),
         nn.Linear(1, 1),
@@ -125,22 +126,23 @@ def test_checkpoint_invalid_type():
     model = nn.Sequential(nn.Linear(1, 1), nn.Linear(1, 1))
     
     # Non-integer in list should raise error
-    with pytest.raises(ValueError, match="checkpoint must be a string"):
+    with pytest.raises(ValueError, match="checkpoint must be a string.*or an iterable of layer indices"):
         GPipe(model, balance=[1, 1], devices=['cpu', 'cpu'], chunks=2, checkpoint=[1, 'a'])
 
 
-def test_checkpoint_out_of_range_indices():
-    """Test that out-of-range indices are filtered out."""
+def test_checkpoint_out_of_range_layer_indices():
+    """Test that out-of-range layer indices are handled gracefully."""
     model = nn.Sequential(
         nn.Linear(1, 1),
         nn.Linear(1, 1),
         nn.Linear(1, 1),
     )
     
-    # Include indices outside valid range
+    # Include layer indices outside valid range (model only has layers 0, 1, 2)
+    # Invalid indices will be silently ignored
     gpipe = GPipe(model, balance=[1, 1, 1], devices=['cpu']*3, chunks=2, checkpoint=[1, 5, 10, -1])
     
-    # Should only contain valid indices plus borders
+    # Should still work without errors
     input_data = torch.rand(2, 1)
     output = gpipe(input_data)
     
@@ -165,12 +167,13 @@ def test_checkpoint_eval_mode():
     assert count_grad_fn(output.grad_fn, 'CheckpointBackward') == 0
 
 
-def test_checkpoint_specific_partitions():
-    """Test checkpointing specific partitions in a larger model."""
-    # Create a model with 6 partitions
+def test_checkpoint_specific_layers():
+    """Test checkpointing specific layers in a model."""
+    # Create a model with 6 layers
     model = nn.Sequential(*[nn.Linear(1, 1) for _ in range(6)])
     
-    # Checkpoint only partitions 2, 3, 4 (borders 0 and 5 will be added)
+    # Checkpoint layers 2, 3, 4
+    # With balance=[1,1,1,1,1,1], layer indices = partition indices
     gpipe = GPipe(
         model,
         balance=[1, 1, 1, 1, 1, 1],
@@ -178,6 +181,38 @@ def test_checkpoint_specific_partitions():
         chunks=2,
         checkpoint=[2, 3, 4]
     )
+    
+    input_data = torch.rand(2, 1)
+    output = gpipe(input_data)
+    
+    # Should have checkpoint functions
+    assert count_grad_fn(output.grad_fn, 'CheckpointBackward') > 0
+    
+    # Output should be correct shape
+    assert output.shape == (2, 1)
+
+
+def test_checkpoint_layer_to_partition_conversion():
+    """Test that layer indices are correctly converted to partition indices."""
+    # Create a model with 10 layers
+    model = nn.Sequential(*[nn.Linear(1, 1) for _ in range(10)])
+    
+    # Split into 3 partitions: balance=[3, 3, 4]
+    # Partition 0: layers 0, 1, 2
+    # Partition 1: layers 3, 4, 5
+    # Partition 2: layers 6, 7, 8, 9
+    
+    # Checkpoint layers 3, 5, 7 (should checkpoint partitions 1 and 2)
+    gpipe = GPipe(
+        model,
+        balance=[3, 3, 4],
+        devices=['cpu']*3,
+        chunks=2,
+        checkpoint=[3, 5, 7]
+    )
+    
+    # Layer indices are stored as-is
+    assert gpipe.checkpoint == {3, 5, 7}
     
     input_data = torch.rand(2, 1)
     output = gpipe(input_data)

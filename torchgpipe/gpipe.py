@@ -70,6 +70,42 @@ class BalanceError(ValueError):
     pass
 
 
+def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]) -> Set[int]:
+    """Convert layer indices to partition indices based on balance.
+    
+    Args:
+        layer_indices: Indices of layers in the original sequential module.
+        balance: List showing how many layers are in each partition.
+        
+    Returns:
+        Set of partition indices that contain the specified layers.
+        
+    Example:
+        If balance = [3, 3, 4] (10 layers split into 3 partitions):
+        - Partition 0: layers 0, 1, 2
+        - Partition 1: layers 3, 4, 5
+        - Partition 2: layers 6, 7, 8, 9
+        
+        layer_indices_to_partitions([3, 5, 7], [3, 3, 4]) returns {1, 2}
+    """
+    partition_indices = set()
+    layer_to_partition = {}
+    
+    # Build mapping from layer index to partition index
+    layer_idx = 0
+    for partition_idx, num_layers in enumerate(balance):
+        for _ in range(num_layers):
+            layer_to_partition[layer_idx] = partition_idx
+            layer_idx += 1
+    
+    # Convert layer indices to partition indices
+    for layer_idx in layer_indices:
+        if layer_idx in layer_to_partition:
+            partition_indices.add(layer_to_partition[layer_idx])
+    
+    return partition_indices
+
+
 def split_module(module: nn.Sequential,
                  balance: Iterable[int],
                  devices: List[torch.device],
@@ -167,9 +203,10 @@ class GPipe(Module):
         checkpoint (str or list of ints):
             when to enable checkpointing. Can be one of ``'always'``,
             ``'except_last'``, or ``'never'`` (default: ``'except_last'``),
-            or a list/tuple of partition indices to checkpoint (e.g., ``[0, 2, 4]``).
+            or a list/tuple of layer indices in the original sequential module
+            to checkpoint (e.g., ``[3, 5, 12, 15]``).
             When using a list, border partitions (first and last) are always
-            checkpointed regardless of the list contents.
+            checkpointed regardless of the layer indices specified.
         deferred_batch_norm (bool):
             whether to use deferred BatchNorm moving statistics (default:
             :data:`False`, see :ref:`Deferred Batch Normalization` for more
@@ -211,7 +248,7 @@ class GPipe(Module):
 
     #: The checkpoint mode to determine when to enable checkpointing. It is one
     #: of ``'always'``, ``'except_last'``, or ``'never'``, or a set of
-    #: partition indices to checkpoint.
+    #: layer indices from the original sequential module to checkpoint.
     checkpoint: Union[str, Set[int]] = 'except_last'
 
     def __init__(self,
@@ -247,7 +284,7 @@ class GPipe(Module):
             if checkpoint_str in ['always', 'except_last', 'never']:
                 checkpoint_normalized = checkpoint_str
             else:
-                # It's not a valid string mode, try to treat it as an iterable of partition indices
+                # It's not a valid string mode, try to treat it as an iterable of layer indices
                 try:
                     checkpoint_set = set(checkpoint)
                     if not all(isinstance(i, int) for i in checkpoint_set):
@@ -256,7 +293,7 @@ class GPipe(Module):
                 except (TypeError, ValueError) as e:
                     raise ValueError(
                         "checkpoint must be a string ('always', 'except_last', 'never') "
-                        "or an iterable of partition indices"
+                        "or an iterable of layer indices"
                     ) from e
 
         verify_module(module)
@@ -400,15 +437,13 @@ class GPipe(Module):
                 }[self.checkpoint]
                 checkpoint_partitions = None  # Use micro-batch-based checkpointing
             else:
-                # New partition-based checkpointing
-                # User-provided set of partition indices
+                # New layer-based checkpointing
+                # Convert layer indices to partition indices
+                checkpoint_partitions = layer_indices_to_partitions(self.checkpoint, self.balance)
                 # Always include border partitions (0 and n-1)
-                checkpoint_partitions = set(self.checkpoint)
                 checkpoint_partitions.add(0)
                 if n > 0:
                     checkpoint_partitions.add(n - 1)
-                # Filter out invalid partition indices
-                checkpoint_partitions = {i for i in checkpoint_partitions if 0 <= i < n}
                 checkpoint_stop = 0  # Not used when checkpoint_partitions is set
         else:
             checkpoint_stop = 0
