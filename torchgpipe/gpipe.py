@@ -1,6 +1,7 @@
 """The GPipe interface."""
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Set, Tuple, Union, cast
+import warnings
 
 import torch
 from torch import Tensor, nn
@@ -88,8 +89,6 @@ def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]
         
         layer_indices_to_partitions([3, 5, 7], [3, 3, 4]) returns {1, 2}
     """
-    import warnings
-    
     partition_indices = set()
     layer_to_partition = {}
     
@@ -107,11 +106,12 @@ def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]
         if layer_idx in layer_to_partition:
             partition_indices.add(layer_to_partition[layer_idx])
         else:
+            # Show warning at user's call site (GPipe.forward() -> user code)
             warnings.warn(
                 f"Layer index {layer_idx} is out of range for model with {total_layers} layers "
                 f"(valid range: 0-{total_layers-1}). This index will be ignored.",
                 UserWarning,
-                stacklevel=3
+                stacklevel=5
             )
     
     return partition_indices

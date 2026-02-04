@@ -139,10 +139,12 @@ def test_checkpoint_out_of_range_layer_indices():
     )
     
     # Include layer indices outside valid range (model only has layers 0, 1, 2)
-    # Invalid indices (5, 10, -1) should trigger warnings during forward pass
+    # Test with 3 invalid indices: 5, 10, -1
+    # Note: -1 is tested as it's a common Python convention for reverse indexing,
+    # but GPipe requires explicit positive indices
     gpipe = GPipe(model, balance=[1, 1, 1], devices=['cpu']*3, chunks=2, checkpoint=[1, 5, 10, -1])
     
-    # Verify that layer index 1 is stored (out-of-range indices not validated yet)
+    # Verify that all indices are stored (not validated until forward pass)
     assert gpipe.checkpoint == {1, 5, 10, -1}, f"Expected {{1, 5, 10, -1}}, got {gpipe.checkpoint}"
     
     # Warnings should be triggered during forward pass when conversion happens
@@ -152,9 +154,9 @@ def test_checkpoint_out_of_range_layer_indices():
         input_data = torch.rand(2, 1)
         output = gpipe(input_data)
         
-        # Should have warnings for out-of-range indices
+        # Should have exactly 3 warnings for the 3 out-of-range indices
         warning_messages = [str(warning.message) for warning in w if 'out of range' in str(warning.message)]
-        assert len(warning_messages) >= 3, f"Expected at least 3 warnings, got {len(warning_messages)}"
+        assert len(warning_messages) == 3, f"Expected 3 warnings, got {len(warning_messages)}: {warning_messages}"
     
     # Should still work without errors
     assert output.shape == (2, 1)
