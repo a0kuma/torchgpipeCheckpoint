@@ -116,7 +116,7 @@ def test_checkpoint_invalid_string():
     """Test that invalid string raises error."""
     model = nn.Sequential(nn.Linear(1, 1))
     
-    with pytest.raises(ValueError, match="checkpoint is not one of"):
+    with pytest.raises(ValueError, match="checkpoint must be a string"):
         GPipe(model, balance=[1], devices=['cpu'], chunks=2, checkpoint='invalid')
 
 
