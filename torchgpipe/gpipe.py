@@ -88,6 +88,8 @@ def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]
         
         layer_indices_to_partitions([3, 5, 7], [3, 3, 4]) returns {1, 2}
     """
+    import warnings
+    
     partition_indices = set()
     layer_to_partition = {}
     
@@ -98,10 +100,19 @@ def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]
             layer_to_partition[layer_idx] = partition_idx
             layer_idx += 1
     
+    total_layers = sum(balance)
+    
     # Convert layer indices to partition indices
     for layer_idx in layer_indices:
         if layer_idx in layer_to_partition:
             partition_indices.add(layer_to_partition[layer_idx])
+        else:
+            warnings.warn(
+                f"Layer index {layer_idx} is out of range for model with {total_layers} layers "
+                f"(valid range: 0-{total_layers-1}). This index will be ignored.",
+                UserWarning,
+                stacklevel=3
+            )
     
     return partition_indices
 

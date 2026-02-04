@@ -131,7 +131,7 @@ def test_checkpoint_invalid_type():
 
 
 def test_checkpoint_out_of_range_layer_indices():
-    """Test that out-of-range layer indices are handled gracefully."""
+    """Test that out-of-range layer indices trigger warnings."""
     model = nn.Sequential(
         nn.Linear(1, 1),
         nn.Linear(1, 1),
@@ -139,12 +139,22 @@ def test_checkpoint_out_of_range_layer_indices():
     )
     
     # Include layer indices outside valid range (model only has layers 0, 1, 2)
-    # Invalid indices will be silently ignored
+    # Invalid indices (5, 10, -1) should trigger warnings during forward pass
     gpipe = GPipe(model, balance=[1, 1, 1], devices=['cpu']*3, chunks=2, checkpoint=[1, 5, 10, -1])
     
-    # Should still work without errors
-    input_data = torch.rand(2, 1)
-    output = gpipe(input_data)
+    # Verify that layer index 1 is stored (out-of-range indices not validated yet)
+    assert gpipe.checkpoint == {1, 5, 10, -1}, f"Expected {{1, 5, 10, -1}}, got {gpipe.checkpoint}"
+    
+    # Warnings should be triggered during forward pass when conversion happens
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        input_data = torch.rand(2, 1)
+        output = gpipe(input_data)
+        
+        # Should have warnings for out-of-range indices
+        warning_messages = [str(warning.message) for warning in w if 'out of range' in str(warning.message)]
+        assert len(warning_messages) >= 3, f"Expected at least 3 warnings, got {len(warning_messages)}"
     
     # Should still work without errors
     assert output.shape == (2, 1)
