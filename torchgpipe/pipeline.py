@@ -1,7 +1,7 @@
 """The pipeline parallelism of GPipe."""
 from queue import Queue
 from types import TracebackType
-from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple, Type, Union, cast
+from typing import TYPE_CHECKING, Iterable, List, Optional, Set, Tuple, Type, Union, cast
 
 import torch
 from torch import Tensor, nn
@@ -75,6 +75,7 @@ class Pipeline:
                  copy_streams: Optional[List[List[AbstractStream]]] = None,
                  skip_layout: Optional[SkipLayout] = None,
                  checkpoint_stop: int = 0,
+                 checkpoint_partitions: Optional[Set[int]] = None,
                  ) -> None:
         self.batches = batches
         self.partitions = partitions
@@ -92,6 +93,7 @@ class Pipeline:
 
         self.skip_layout = skip_layout
         self.checkpoint_stop = checkpoint_stop
+        self.checkpoint_partitions = checkpoint_partitions
 
     def run(self) -> None:
         """Runs pipeline parallelism.
@@ -153,6 +155,7 @@ class Pipeline:
         devices = self.devices
         copy_streams = self.copy_streams
         checkpoint_stop = self.checkpoint_stop
+        checkpoint_partitions = self.checkpoint_partitions
 
         n = len(partitions)
         streams = [current_stream(d) for d in devices]
@@ -191,8 +194,14 @@ class Pipeline:
             if j != 0:
                 wait(batch, copy_streams[j][i], streams[j])
 
-            # Determine whether checkpointing or not.
-            checkpoint = (i < checkpoint_stop)
+            # Determine whether checkpointing or not
+            # If checkpoint_partitions is set, use partition-based checkpointing
+            # Otherwise, use micro-batch-based checkpointing (original behavior)
+            if checkpoint_partitions is not None:
+                checkpoint = (j in checkpoint_partitions)
+            else:
+                checkpoint = (i < checkpoint_stop)
+
             if checkpoint:
                 def function(input: TensorOrTensors,
                              partition: nn.Sequential = partition,

@@ -1,6 +1,7 @@
 """The GPipe interface."""
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Set, Tuple, Union, cast
+import warnings
 
 import torch
 from torch import Tensor, nn
@@ -22,6 +23,8 @@ Devices = Union[Iterable[Device], List[Device]]
 
 Tensors = Tuple[Tensor, ...]
 TensorOrTensors = Union[Tensor, Tensors]
+
+Checkpoint = Union[str, Iterable[int]]
 
 if TYPE_CHECKING:
     Module = nn.Module[TensorOrTensors]
@@ -66,6 +69,52 @@ def verify_module(module: nn.Sequential) -> None:
 
 class BalanceError(ValueError):
     pass
+
+
+def layer_indices_to_partitions(layer_indices: Iterable[int], balance: List[int]) -> Set[int]:
+    """Convert layer indices to partition indices based on balance.
+    
+    Args:
+        layer_indices: Indices of layers in the original sequential module.
+        balance: List showing how many layers are in each partition.
+        
+    Returns:
+        Set of partition indices that contain the specified layers.
+        
+    Example:
+        If balance = [3, 3, 4] (10 layers split into 3 partitions):
+        - Partition 0: layers 0, 1, 2
+        - Partition 1: layers 3, 4, 5
+        - Partition 2: layers 6, 7, 8, 9
+        
+        layer_indices_to_partitions([3, 5, 7], [3, 3, 4]) returns {1, 2}
+    """
+    partition_indices = set()
+    layer_to_partition = {}
+    
+    # Build mapping from layer index to partition index
+    layer_idx = 0
+    for partition_idx, num_layers in enumerate(balance):
+        for _ in range(num_layers):
+            layer_to_partition[layer_idx] = partition_idx
+            layer_idx += 1
+    
+    total_layers = sum(balance)
+    
+    # Convert layer indices to partition indices
+    for layer_idx in layer_indices:
+        if layer_idx in layer_to_partition:
+            partition_indices.add(layer_to_partition[layer_idx])
+        else:
+            # Show warning at user's call site (GPipe.forward() -> user code)
+            warnings.warn(
+                f"Layer index {layer_idx} is out of range for model with {total_layers} layers "
+                f"(valid range: 0-{total_layers-1}). This index will be ignored.",
+                UserWarning,
+                stacklevel=5
+            )
+    
+    return partition_indices
 
 
 def split_module(module: nn.Sequential,
@@ -162,9 +211,13 @@ class GPipe(Module):
             devices to use (default: all CUDA devices)
         chunks (int):
             number of micro-batches (default: ``1``)
-        checkpoint (str):
-            when to enable checkpointing, one of ``'always'``,
-            ``'except_last'``, or ``'never'`` (default: ``'except_last'``)
+        checkpoint (str or list of ints):
+            when to enable checkpointing. Can be one of ``'always'``,
+            ``'except_last'``, or ``'never'`` (default: ``'except_last'``),
+            or a list/tuple of layer indices in the original sequential module
+            to checkpoint (e.g., ``[3, 5, 12, 15]``).
+            When using a list, border partitions (first and last) are always
+            checkpointed regardless of the layer indices specified.
         deferred_batch_norm (bool):
             whether to use deferred BatchNorm moving statistics (default:
             :data:`False`, see :ref:`Deferred Batch Normalization` for more
@@ -205,8 +258,9 @@ class GPipe(Module):
     chunks: int = 1
 
     #: The checkpoint mode to determine when to enable checkpointing. It is one
-    #: of ``'always'``, ``'except_last'``, or ``'never'``.
-    checkpoint: str = 'except_last'
+    #: of ``'always'``, ``'except_last'``, or ``'never'``, or a set of
+    #: layer indices from the original sequential module to checkpoint.
+    checkpoint: Union[str, Set[int]] = 'except_last'
 
     def __init__(self,
                  module: nn.Sequential,
@@ -214,20 +268,44 @@ class GPipe(Module):
                  *,
                  devices: Optional[Devices] = None,
                  chunks: int = chunks,
-                 checkpoint: str = checkpoint,
+                 checkpoint: Checkpoint = checkpoint,
                  deferred_batch_norm: bool = False,
                  ) -> None:
         super().__init__()
 
         chunks = int(chunks)
-        checkpoint = str(checkpoint)
 
         if balance is None:
             raise ValueError(recommend_auto_balance('balance is required'))
         if chunks <= 0:
             raise ValueError('number of chunks must be positive integer')
-        if checkpoint not in ['always', 'except_last', 'never']:
-            raise ValueError("checkpoint is not one of 'always', 'except_last', or 'never'")
+
+        # Validate and normalize checkpoint parameter
+        checkpoint_normalized: Union[str, Set[int]]
+        
+        # Check if it's a string (or string-like) checkpoint mode
+        if isinstance(checkpoint, str):
+            if checkpoint in ['always', 'except_last', 'never']:
+                checkpoint_normalized = checkpoint
+            else:
+                raise ValueError("checkpoint is not one of 'always', 'except_last', or 'never'")
+        else:
+            # Try to convert to string in case it's a string-like object (e.g., MyString)
+            checkpoint_str = str(checkpoint)
+            if checkpoint_str in ['always', 'except_last', 'never']:
+                checkpoint_normalized = checkpoint_str
+            else:
+                # It's not a valid string mode, try to treat it as an iterable of layer indices
+                try:
+                    checkpoint_set = set(checkpoint)
+                    if not all(isinstance(i, int) for i in checkpoint_set):
+                        raise ValueError("checkpoint list must contain only integers")
+                    checkpoint_normalized = checkpoint_set
+                except (TypeError, ValueError) as e:
+                    raise ValueError(
+                        "checkpoint must be a string ('always', 'except_last', 'never') "
+                        "or an iterable of layer indices"
+                    ) from e
 
         verify_module(module)
 
@@ -236,7 +314,7 @@ class GPipe(Module):
         verify_skippables(module)
 
         self.chunks = chunks
-        self.checkpoint = checkpoint
+        self.checkpoint = checkpoint_normalized
 
         if deferred_batch_norm:
             module = DeferredBatchNorm.convert_deferred_batch_norm(module, chunks)
@@ -356,15 +434,31 @@ class GPipe(Module):
         # Separate CUDA streams for copy.
         copy_streams = self._ensure_copy_streams()
 
-        # The micro-batch index where the checkpointing stops.
+        # Determine checkpointing strategy
+        n = len(self.partitions)
+        m = len(batches)
+        
         if self.training:
-            checkpoint_stop = {
-                'always': self.chunks,
-                'except_last': self.chunks-1,
-                'never': 0,
-            }[self.checkpoint]
+            if isinstance(self.checkpoint, str):
+                # Original micro-batch-based checkpointing for backward compatibility
+                checkpoint_stop = {
+                    'always': m,
+                    'except_last': m - 1,
+                    'never': 0,
+                }[self.checkpoint]
+                checkpoint_partitions = None  # Use micro-batch-based checkpointing
+            else:
+                # New layer-based checkpointing
+                # Convert layer indices to partition indices
+                checkpoint_partitions = layer_indices_to_partitions(self.checkpoint, self.balance)
+                # Always include border partitions (0 and n-1)
+                checkpoint_partitions.add(0)
+                if n > 0:
+                    checkpoint_partitions.add(n - 1)
+                checkpoint_stop = 0  # Not used when checkpoint_partitions is set
         else:
             checkpoint_stop = 0
+            checkpoint_partitions = None
 
         # Run pipeline parallelism.
         pipeline = Pipeline(batches,
@@ -372,7 +466,8 @@ class GPipe(Module):
                             self.devices,
                             copy_streams,
                             self._skip_layout,
-                            checkpoint_stop)
+                            checkpoint_stop,
+                            checkpoint_partitions)
         pipeline.run()
 
         # Merge the micro-batches into one mini-batch.
