@@ -4,12 +4,60 @@ This document explains the two different checkpointing strategies available in t
 
 ## Table of Contents
 
+- [Understanding the Relationship Between Checkpointing and Micro-batches](#understanding-the-relationship-between-checkpointing-and-micro-batches)
 - [What is Checkpointing?](#what-is-checkpointing)
 - [Micro-batch-based Checkpointing](#micro-batch-based-checkpointing)
 - [Partition-based Checkpointing](#partition-based-checkpointing)
 - [Comparison](#comparison)
 - [When to Use Each Strategy](#when-to-use-each-strategy)
 - [Examples](#examples)
+
+---
+
+## Understanding the Relationship Between Checkpointing and Micro-batches
+
+**Important Clarification**: Checkpointing and micro-batches **ARE** related in GPipe's design. This is not arbitrary!
+
+### Why They're Related
+
+In GPipe's pipeline parallelism:
+
+1. **Multiple micro-batches exist simultaneously** in different pipeline stages
+2. **Each occupies memory** for its activations
+3. **They progress through the pipeline at different times**
+4. **Some micro-batches finish forward pass much earlier than others**
+
+This creates a **memory pressure pattern over time**:
+
+```
+Forward Pass Timeline (4 micro-batches, 3 partitions):
+─────────────────────────────────────────────────────
+Time  MB0     MB1     MB2     MB3     Memory Status
+─────────────────────────────────────────────────────
+T0    →P0                             MB0 activations in memory
+T1    →P1     →P0                     MB0+MB1 activations
+T2    →P2     →P1     →P0             MB0+MB1+MB2 activations (PEAK!)
+T3    DONE    →P2     →P1     →P0     MB0 done, MB1+MB2+MB3 activations
+T4            DONE    →P2     →P1     MB1 done, MB2+MB3 activations
+T5                    DONE    →P2     MB2 done, MB3 activations
+T6                            DONE    MB3 done
+
+Backward Pass Begins:
+T7                            ←P2     MB3 needs activations NOW
+T8                    ←P1     ←P2     MB2+MB3 need activations
+...
+```
+
+**Key Insight**: MB0-MB2 finish forward pass long before backward starts. **Checkpointing them saves memory during the gap**. MB3 finishes right before backward - checkpointing it provides **no benefit** since activations are needed immediately.
+
+### The Core Principle
+
+Micro-batch-based checkpointing leverages the **temporal gap** between when a micro-batch finishes forward propagation and when it needs activations for backward propagation. Earlier micro-batches have longer gaps → more memory savings from checkpointing.
+
+This is why the strategies are defined by micro-batch index:
+- **`'except_last'`**: Checkpoint MB0 through MB(n-2), skip MB(n-1) - optimal memory/compute trade-off
+- **`'always'`**: Checkpoint all including MB(n-1) - wastes computation on the last one
+- **`'never'`**: Don't checkpoint any - uses maximum memory
 
 ---
 
@@ -31,17 +79,112 @@ This trade-off exchanges **memory** for **computation time**: you save memory bu
 
 **Micro-batch-based checkpointing** controls checkpointing based on which **micro-batch** is being processed. This is the original behavior in torchgpipe and is controlled by string modes.
 
+**Important**: Checkpointing and micro-batches ARE related in GPipe's pipeline parallelism design. This is not arbitrary - it's a fundamental part of how GPipe optimizes memory usage during pipelined execution.
+
 ### How It Works
 
 When you split a mini-batch into multiple micro-batches (controlled by the `chunks` parameter), GPipe processes them sequentially through the pipeline. Micro-batch-based checkpointing decides whether to checkpoint based on the micro-batch index.
+
+**Key Insight**: Different micro-batches are at different stages in the pipeline at any given time. This creates opportunities to optimize which ones need checkpointing.
+
+### Code Implementation
+
+The decision happens in **two locations**:
+
+#### 1. Configuration Stage (`torchgpipe/gpipe.py`, lines 442-448)
+
+```python
+if isinstance(self.checkpoint, str):
+    # Original micro-batch-based checkpointing for backward compatibility
+    checkpoint_stop = {
+        'always': m,           # m = number of micro-batches
+        'except_last': m - 1,  # Checkpoint all except the last
+        'never': 0,            # Don't checkpoint any
+    }[self.checkpoint]
+    checkpoint_partitions = None  # Use micro-batch-based checkpointing
+```
+
+The `checkpoint_stop` variable is set to a number indicating how many micro-batches (counting from 0) should be checkpointed.
+
+#### 2. Execution Stage (`torchgpipe/pipeline.py`, lines 189-203)
+
+```python
+for i, j in schedule:
+    # i = micro-batch index (0, 1, 2, ...)
+    # j = partition index (0, 1, 2, ...)
+    
+    batch = batches[i]
+    partition = partitions[j]
+    
+    # Determine whether checkpointing or not
+    if checkpoint_partitions is not None:
+        checkpoint = (j in checkpoint_partitions)  # Partition-based
+    else:
+        checkpoint = (i < checkpoint_stop)          # Micro-batch-based ← HERE
+    
+    if checkpoint:
+        # Use checkpointing (save memory, recompute during backward)
+        chk = Checkpointing(function, batch)
+        task = Task(streams[j], compute=chk.checkpoint, finalize=chk.recompute)
+    else:
+        # Don't checkpoint (keep activations in memory)
+        task = Task(streams[j], compute=compute, finalize=None)
+```
+
+The condition `i < checkpoint_stop` determines if micro-batch `i` should be checkpointed.
+
+### Why Not Checkpoint All Micro-batches?
+
+You might wonder: "Why not checkpoint all micro-batches if it saves memory?"
+
+The answer lies in **pipeline parallelism dynamics**:
+
+1. **The last micro-batch is already at the end of the pipeline** when backpropagation starts
+2. **No other micro-batches are waiting behind it** in the forward pass
+3. **Its activations will be needed immediately** for backward pass
+4. **Checkpointing would waste computation** since there's no memory pressure benefit
+
+#### Detailed Explanation
+
+In pipeline parallelism with `chunks=4`:
+
+```
+Time →
+T0:  MB0→P0
+T1:  MB1→P0   MB0→P1
+T2:  MB2→P0   MB1→P1   MB0→P2
+T3:  MB3→P0   MB2→P1   MB1→P2   MB0→P3
+T4:           MB3→P1   MB2→P2   MB1→P3
+T5:                    MB3→P2   MB2→P3
+T6:                             MB3→P3
+     ↓ Forward pass ends, backward starts here
+T7:                             MB3←P3  (need activations NOW)
+T8:                    MB3←P2   MB2←P3
+T9:           MB3←P1   MB2←P2   MB1←P3
+...
+```
+
+**MB3 (last micro-batch)**:
+- Finishes forward pass at T6
+- Needs activations immediately at T7 for backward
+- **Checkpointing it would require immediate recomputation** (no benefit!)
+- Memory saved = 0 (activations needed right away)
+
+**MB0-MB2 (earlier micro-batches)**:
+- Finish forward earlier (T3, T4, T5)
+- Don't need activations until later (T10+)
+- **Checkpointing saves memory during the gap**
+- Other micro-batches can use that memory
+
+This is why `'except_last'` is the **optimal default** for pipeline parallelism.
 
 ### String Modes
 
 The checkpoint parameter accepts three string values:
 
-- **`'always'`**: Checkpoint **all** micro-batches
-- **`'except_last'`** (default): Checkpoint all micro-batches **except the last one**
-- **`'never'`**: **Don't checkpoint** any micro-batches
+- **`'always'`**: Checkpoint **all** micro-batches (maximum memory saving, most recomputation)
+- **`'except_last'`** (default): Checkpoint all micro-batches **except the last one** (optimal for pipelines)
+- **`'never'`**: **Don't checkpoint** any micro-batches (maximum memory usage, no recomputation)
 
 ### Visualization
 
@@ -57,6 +200,10 @@ Processing timeline:
 │ Micro-batch 2 → Checkpointed ✓         │
 │ Micro-batch 3 → NOT checkpointed ✗     │
 └─────────────────────────────────────────┘
+
+Why?
+- MB 0-2: Finish early, don't need activations until much later → checkpoint saves memory
+- MB 3: Finishes last, needs activations immediately → checkpointing wastes computation
 ```
 
 ### Example Usage
