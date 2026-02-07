@@ -18,6 +18,8 @@ from torchgpipe.worker import Task, spawn_workers
 
 __all__: List[str] = []
 
+logger = logging.getLogger(__name__)
+
 
 Tensors = Tuple[Tensor, ...]
 TensorOrTensors = Union[Tensor, Tensors]
@@ -198,17 +200,19 @@ class Pipeline:
             # Log checkpoint decision for each micro-batch
             # Use INFO level to highlight micro-batches NOT using checkpointing
             if checkpoint:
-                logging.debug(
-                    f"Micro-batch {i} (partition {j}): "
-                    f"checkpoint_stop={checkpoint_stop}, "
-                    f"using_checkpointing=True"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Micro-batch {i} (partition {j}): "
+                        f"checkpoint_stop={checkpoint_stop}, "
+                        f"using_checkpointing=True"
+                    )
             else:
-                logging.info(
-                    f"Micro-batch {i} (partition {j}): "
-                    f"checkpoint_stop={checkpoint_stop}, "
-                    f"using_checkpointing=False"
-                )
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        f"Micro-batch {i} (partition {j}): "
+                        f"checkpoint_stop={checkpoint_stop}, "
+                        f"using_checkpointing=False"
+                    )
             
             if checkpoint:
                 def function(input: TensorOrTensors,
