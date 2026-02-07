@@ -180,7 +180,7 @@ def cli(ctx: click.Context,
     click.echo(title)
 
     if isinstance(model, GPipe):
-        click.echo(f'batch size: {batch_size}, chunks: {model.chunks}, '
+        click.echo(f'batch size: {batch_size}, micro-batches (chunks): {model.chunks}, '
                    f'balance: {model.balance}, checkpoint: {model.checkpoint}')
     else:
         click.echo(f'batch size: {batch_size}')
