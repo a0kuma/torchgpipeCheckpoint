@@ -1,4 +1,5 @@
 """The pipeline parallelism of GPipe."""
+import logging
 from queue import Queue
 from types import TracebackType
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple, Type, Union, cast
@@ -16,6 +17,8 @@ from torchgpipe.stream import AbstractStream, current_stream, use_device
 from torchgpipe.worker import Task, spawn_workers
 
 __all__: List[str] = []
+
+logger = logging.getLogger(__name__)
 
 
 Tensors = Tuple[Tensor, ...]
@@ -193,6 +196,22 @@ class Pipeline:
 
             # Determine whether checkpointing or not.
             checkpoint = (i < checkpoint_stop)
+
+            # Log checkpoint decision for each micro-batch
+            # Use INFO level to highlight micro-batches NOT using checkpointing
+            if checkpoint:
+                logger.debug(
+                    f"Micro-batch {i} (partition {j}): "
+                    f"checkpoint_stop={checkpoint_stop}, "
+                    f"using_checkpointing=True"
+                )
+            else:
+                logger.info(
+                    f"Micro-batch {i} (partition {j}): "
+                    f"checkpoint_stop={checkpoint_stop}, "
+                    f"using_checkpointing=False"
+                )
+
             if checkpoint:
                 def function(input: TensorOrTensors,
                              partition: nn.Sequential = partition,
