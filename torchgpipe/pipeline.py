@@ -196,7 +196,7 @@ class Pipeline:
 
             # Determine whether checkpointing or not.
             checkpoint = (i < checkpoint_stop)
-            
+
             # Log checkpoint decision for each micro-batch
             # Use INFO level to highlight micro-batches NOT using checkpointing
             if checkpoint:
@@ -213,7 +213,7 @@ class Pipeline:
                         f"checkpoint_stop={checkpoint_stop}, "
                         f"using_checkpointing=False"
                     )
-            
+
             if checkpoint:
                 def function(input: TensorOrTensors,
                              partition: nn.Sequential = partition,
