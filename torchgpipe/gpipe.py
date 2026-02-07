@@ -163,13 +163,13 @@ class GPipe(Module):
 
         # Place 3 partitions all on GPU 0 with checkpointing between them
         model = nn.Sequential(a, b, c, d, e, f)
-        model = GPipe(model, balance=[2, 2, 2], 
-                     devices=['cuda:0', 'cuda:0', 'cuda:0'],
-                     checkpoint='always')
+        model = GPipe(model, balance=[2, 2, 2],
+                      devices=['cuda:0', 'cuda:0', 'cuda:0'],
+                      checkpoint='always')
 
         # Mix devices: partitions 0-1 on GPU 0, partitions 2-3 on GPU 1
         model = GPipe(model, balance=[1, 2, 2, 1],
-                     devices=['cuda:0', 'cuda:0', 'cuda:1', 'cuda:1'])
+                      devices=['cuda:0', 'cuda:0', 'cuda:1', 'cuda:1'])
 
     Args:
         module (torch.nn.Sequential):

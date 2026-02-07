@@ -97,7 +97,7 @@ from torchgpipe import GPipe
 model = nn.Sequential(a, b, c, d, e, f)
 
 # Place 3 partitions all on GPU 0 with checkpointing between them
-model = GPipe(model, balance=[2, 2, 2], 
+model = GPipe(model, balance=[2, 2, 2],
               devices=['cuda:0', 'cuda:0', 'cuda:0'],
               chunks=8, checkpoint='always')
 
