@@ -196,11 +196,19 @@ class Pipeline:
             checkpoint = (i < checkpoint_stop)
             
             # Log checkpoint decision for each micro-batch
-            logging.info(
-                f"Micro-batch {i} (partition {j}): "
-                f"checkpoint_stop={checkpoint_stop}, "
-                f"using_checkpointing={checkpoint}"
-            )
+            # Use INFO level to highlight micro-batches NOT using checkpointing
+            if checkpoint:
+                logging.debug(
+                    f"Micro-batch {i} (partition {j}): "
+                    f"checkpoint_stop={checkpoint_stop}, "
+                    f"using_checkpointing=True"
+                )
+            else:
+                logging.info(
+                    f"Micro-batch {i} (partition {j}): "
+                    f"checkpoint_stop={checkpoint_stop}, "
+                    f"using_checkpointing=False"
+                )
             
             if checkpoint:
                 def function(input: TensorOrTensors,
