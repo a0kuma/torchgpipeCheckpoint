@@ -3,6 +3,7 @@ import platform
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import click
+import shutil
 import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
@@ -89,7 +90,7 @@ EXPERIMENTS: Dict[str, Experiment] = {
 
 def hr() -> None:
     """Prints a horizontal line."""
-    width, _ = click.get_terminal_size()
+    width, _ = shutil.get_terminal_size()
     click.echo('-' * width)
 
 
