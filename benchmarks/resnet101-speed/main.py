@@ -4,6 +4,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import click
+import shutil
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -81,7 +82,7 @@ BASE_TIME: float = 0
 
 def hr() -> None:
     """Prints a horizontal line."""
-    width, _ = click.get_terminal_size()
+    width, _ = shutil.get_terminal_size(fallback=(80, 20))
     click.echo('-' * width)
 
 
@@ -89,7 +90,7 @@ def log(msg: str, clear: bool = False, nl: bool = True) -> None:
     """Prints a message with elapsed time."""
     if clear:
         # Clear the output line to overwrite.
-        width, _ = click.get_terminal_size()
+        width, _ = shutil.get_terminal_size(fallback=(80, 20))
         click.echo('\b\r', nl=False)
         click.echo(' ' * width, nl=False)
         click.echo('\b\r', nl=False)
