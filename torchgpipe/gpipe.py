@@ -74,6 +74,10 @@ def split_module(module: nn.Sequential,
                  ) -> Tuple[List[nn.Sequential], List[int], List[torch.device]]:
     """Splits a module into multiple partitions.
 
+    Partitions are assigned to devices in order: partition i is placed on
+    devices[i]. The same device can appear multiple times in the devices
+    list to place multiple partitions on the same device.
+
     Returns:
         A tuple of (partitions, balance, devices).
 
@@ -151,6 +155,22 @@ class GPipe(Module):
     into multiple devices according to the given balance. You may rely on
     heuristics to find your own optimal configuration.
 
+    **Multiple Partitions on Same Device:**
+    
+    You can place multiple partitions on the same device by repeating the device
+    in the devices list. This enables additional checkpointing boundaries on a
+    single GPU, which can help reduce memory usage::
+
+        # Place 3 partitions all on GPU 0 with checkpointing between them
+        model = nn.Sequential(a, b, c, d, e, f)
+        model = GPipe(model, balance=[2, 2, 2], 
+                     devices=['cuda:0', 'cuda:0', 'cuda:0'],
+                     checkpoint='always')
+
+        # Mix devices: partitions 0-1 on GPU 0, partitions 2-3 on GPU 1
+        model = GPipe(model, balance=[1, 2, 2, 1],
+                     devices=['cuda:0', 'cuda:0', 'cuda:1', 'cuda:1'])
+
     Args:
         module (torch.nn.Sequential):
             sequential module to be parallelized
@@ -159,12 +179,18 @@ class GPipe(Module):
 
     Keyword Args:
         devices (iterable of devices):
-            devices to use (default: all CUDA devices)
+            devices to use (default: all CUDA devices). The length must be at
+            least as long as the number of partitions (len(balance)). You can
+            repeat the same device multiple times to place multiple partitions
+            on the same device.
         chunks (int):
             number of micro-batches (default: ``1``)
         checkpoint (str):
             when to enable checkpointing, one of ``'always'``,
-            ``'except_last'``, or ``'never'`` (default: ``'except_last'``)
+            ``'except_last'``, or ``'never'`` (default: ``'except_last'``).
+            Checkpointing is applied at partition boundaries, so multiple
+            partitions on the same device will have checkpoint boundaries
+            between them.
         deferred_batch_norm (bool):
             whether to use deferred BatchNorm moving statistics (default:
             :data:`False`, see :ref:`Deferred Batch Normalization` for more

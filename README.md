@@ -85,6 +85,28 @@ for input in data_loader:
     output = model(input)
 ```
 
+### Multiple Partitions on Same Device
+
+You can place multiple partitions on the same device by repeating the device
+in the `devices` list. This adds extra checkpointing boundaries within a single
+GPU, which can help reduce memory usage:
+
+```python
+from torchgpipe import GPipe
+
+model = nn.Sequential(a, b, c, d, e, f)
+
+# Place 3 partitions all on GPU 0 with checkpointing between them
+model = GPipe(model, balance=[2, 2, 2], 
+              devices=['cuda:0', 'cuda:0', 'cuda:0'],
+              chunks=8, checkpoint='always')
+
+# Or mix devices: partitions 0-1 on GPU 0, partitions 2-3 on GPU 1
+model = GPipe(model, balance=[1, 2, 2, 1],
+              devices=['cuda:0', 'cuda:0', 'cuda:1', 'cuda:1'],
+              chunks=8)
+```
+
 ## Documentation
 
 Visit [torchgpipe.readthedocs.io][rtd] for more information including the API
