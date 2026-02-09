@@ -96,7 +96,12 @@ The ``Copy`` class is **flexible** and works in **all scenarios**:
        output, = Copy.apply(CPUStream, cuda_stream, cpu_tensor)
        # output is now on GPU
 
-**Key Point**: The actual device transfer happens through ``x.to(get_device(next_stream))`` in the forward pass. The ``Copy`` class automatically determines the target device from the ``next_stream`` parameter and handles the transfer accordingly, while also managing stream synchronization and memory lifetimes with ``record_stream`` calls.
+**Key Point**: The ``Copy`` class handles device transfers automatically:
+
+- The actual device transfer happens through ``x.to(get_device(next_stream))`` in the forward pass
+- The target device is automatically determined from the ``next_stream`` parameter
+- Stream synchronization is managed via ``use_stream`` context managers
+- Memory lifetimes are tracked with ``record_stream`` calls to prevent premature deallocation
 
 Purpose
 -------
