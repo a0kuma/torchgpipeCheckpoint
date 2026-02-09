@@ -42,8 +42,8 @@ In torchgpipe:
 
     import torch
 
-    # Default stream on cuda:0
-    default = torch.cuda.current_stream(torch.device('cuda:0'))
+    # Create a tensor on cuda:0
+    tensor = torch.randn(100, 100, device='cuda:0')
 
     # Create a new stream for concurrent operations
     stream1 = torch.cuda.Stream(torch.device('cuda:0'))
