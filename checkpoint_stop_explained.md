@@ -138,13 +138,15 @@ Clock | Micro-batch operations
 
 ## Memory vs Computation Trade-off
 
-> **Note on overhead**: The overhead figures below are based on the torchgpipe documentation's estimate that checkpointing typically adds ~25% computation overhead per checkpointed micro-batch. Actual overhead varies by model architecture, configuration, and hardware.
+> **Note on overhead**: The overhead figures below are based on the torchgpipe documentation's estimate that checkpointing typically adds ~25% additional computation time per checkpointed micro-batch. Actual overhead varies by model architecture, configuration, and hardware.
 
 | Mode | Memory Usage | Computation Overhead | Use Case |
 |------|-------------|---------------------|----------|
-| `always` | Lowest | ~25% overhead (all micro-batches recomputed) | When memory is extremely limited |
-| `except_last` | Low | ~25% × (chunks-1)/chunks overhead | **Recommended default** - good balance |
+| `always` | Lowest | ~25% additional computation time (all micro-batches) | When memory is extremely limited |
+| `except_last` | Low | ~25% × (chunks-1)/chunks additional time | **Recommended default** - good balance |
 | `never` | Highest | No overhead | When memory is not a concern, or chunks=1 |
+
+*For `except_last`: If chunks=8, overhead is approximately 25% × 7/8 ≈ 21.9% of total forward+backward time.
 
 ## Logging
 
