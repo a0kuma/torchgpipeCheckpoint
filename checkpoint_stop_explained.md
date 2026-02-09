@@ -146,7 +146,7 @@ Clock | Micro-batch operations
 | `except_last` | Low | ~25% × (chunks-1)/chunks additional time | **Recommended default** - good balance |
 | `never` | Highest | No overhead | When memory is not a concern, or chunks=1 |
 
-*For `except_last`: If chunks=8, overhead is approximately 25% × 7/8 ≈ 21.9% of total forward+backward time.
+*For `except_last`: If chunks=8, the additional computation time is approximately 25% × 7/8 ≈ 21.9% compared to running without checkpointing.
 
 ## Logging
 
