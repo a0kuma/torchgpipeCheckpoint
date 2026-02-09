@@ -92,6 +92,10 @@ references.
 
 [rtd]: https://torchgpipe.readthedocs.io/
 
+### Debugging and Logging
+
+See [docs/layer_logging.md](docs/layer_logging.md) for a guide on how to log and track which layers (partitions) are currently executing in the pipeline. This is useful for debugging and understanding pipeline execution flow.
+
 ## Benchmarking
 
 The full details and more benchmarks are available in
