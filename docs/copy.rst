@@ -26,15 +26,15 @@ A **stream** in CUDA is a sequence of operations that execute in order on a GPU 
 
 Think of streams as independent execution queues:
 
-- **Default Stream**: Every CUDA device has a default stream where operations run if no other stream is specified
-- **Custom Streams**: You can create additional streams to run operations concurrently
-- **Concurrency**: Operations in different streams can execute simultaneously, enabling overlap of computation and data transfer
+- **Default Stream**: Every CUDA device has a default stream where operations run if no other stream is specified.
+- **Custom Streams**: You can create additional streams to run operations concurrently.
+- **Concurrency**: Operations in different streams can execute simultaneously, enabling overlap of computation and data transfer.
 
 In torchgpipe:
 
-- Each stream is represented by the ``AbstractStream`` type, which can be either a ``torch.cuda.Stream`` (for CUDA devices) or ``CPUStream`` (a placeholder for CPU operations)
-- The ``Copy`` class uses streams to enable concurrent data copying while other computations are running
-- This is critical for pipeline parallelism because it minimizes GPU idle time
+- Each stream is represented by the ``AbstractStream`` type, which can be either a ``torch.cuda.Stream`` (for CUDA devices) or ``CPUStream`` (a placeholder for CPU operations).
+- The ``Copy`` class uses streams to enable concurrent data copying while other computations are running.
+- This is critical for pipeline parallelism because it minimizes GPU idle time.
 
 **Example:**
 
