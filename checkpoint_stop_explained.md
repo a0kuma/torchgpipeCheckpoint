@@ -10,7 +10,7 @@ Checkpointing is a memory optimization technique used in GPipe that:
 - **During forward propagation**: Discards intermediate activations (except at partition boundaries)
 - **During backward propagation**: Recomputes the forward propagation to regenerate the activations needed for gradient calculation
 
-This technique significantly reduces memory usage at the cost of additional computation time (typically around 25%, though this varies by model architecture and configuration).
+This technique significantly reduces memory usage at the cost of additional computation time. According to the torchgpipe documentation, checkpointing typically incurs around 25% overhead, though this varies by model architecture and configuration.
 
 ## How checkpoint_stop Works
 
@@ -138,12 +138,12 @@ Clock | Micro-batch operations
 
 ## Memory vs Computation Trade-off
 
-> **Note on overhead**: The ~25% computation overhead figures below are typical estimates from the torchgpipe documentation. Actual overhead varies by model architecture, configuration, and hardware.
+> **Note on overhead**: The overhead figures below are based on the torchgpipe documentation's estimate that checkpointing typically adds ~25% computation overhead per checkpointed micro-batch. Actual overhead varies by model architecture, configuration, and hardware.
 
-| Mode | Memory Usage | Computation | Use Case |
-|------|-------------|-------------|----------|
-| `always` | Lowest | ~25% overhead on all batches | When memory is extremely limited |
-| `except_last` | Low | ~25% overhead on (chunks-1) batches | **Recommended default** - good balance |
+| Mode | Memory Usage | Computation Overhead | Use Case |
+|------|-------------|---------------------|----------|
+| `always` | Lowest | ~25% overhead (all micro-batches recomputed) | When memory is extremely limited |
+| `except_last` | Low | ~25% × (chunks-1)/chunks overhead | **Recommended default** - good balance |
 | `never` | Highest | No overhead | When memory is not a concern, or chunks=1 |
 
 ## Logging
