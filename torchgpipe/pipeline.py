@@ -187,7 +187,28 @@ class Pipeline:
                 in_queues: List[InQueue],
                 out_queues: List[OutQueue],
                 ) -> None:
-        """Runs tasks with synchronization to copy streams."""
+        """Runs tasks with synchronization to copy streams.
+        
+        This function schedules the execution of partitions (groups of layers) on worker threads.
+        The actual forward pass through individual layers happens implicitly when a partition
+        (which is an nn.Sequential) is called.
+        
+        IMPORTANT: The forward pass code flow
+        ======================================
+        1. This function creates tasks containing partition execution closures
+        2. Tasks are sent to worker threads via in_queues[j].put(task)
+        3. Worker threads call task.compute() which executes the partition
+        4. When partition(input) or batch.call(partition) is called:
+           - PyTorch's nn.Sequential.__call__() is invoked
+           - nn.Sequential automatically iterates through all layers in the partition
+           - Each layer's forward() method is called sequentially
+        5. The result is returned through out_queues[j].get()
+        
+        So while you don't see "for layer in partition: layer.forward()" explicitly,
+        it happens inside PyTorch's nn.Sequential when partition(input) is called.
+        
+        To see which individual layers execute, use register_layer_logging_hooks().
+        """
         batches = self.batches
         partitions = self.partitions
         devices = self.devices
@@ -250,11 +271,20 @@ class Pipeline:
                 )
 
             if checkpoint:
+                # WITH CHECKPOINTING:
+                # Define a function that will execute the partition's forward pass.
+                # When this function is called, partition(input) invokes nn.Sequential.__call__()
+                # which internally loops through all layers: for layer in partition: output = layer(output)
                 def function(input: TensorOrTensors,
                              partition: nn.Sequential = partition,
                              skip_tracker: SkipTrackerThroughPotals = skip_trackers[i],
                              ) -> TensorOrTensors:
                     with use_skip_tracker(skip_tracker):
+                        # HERE is where the forward pass happens!
+                        # partition(input) calls nn.Sequential.__call__() which:
+                        # 1. Iterates through each layer in the partition
+                        # 2. Calls layer.forward() for each layer sequentially
+                        # 3. Passes output of one layer as input to the next
                         return partition(input)
 
                 chk = Checkpointing(function, batch)
@@ -262,11 +292,19 @@ class Pipeline:
                 del function, chk
 
             else:
+                # WITHOUT CHECKPOINTING:
+                # Define a compute function that will execute the partition's forward pass.
                 def compute(batch: Batch = batch,
                             partition: nn.Sequential = partition,
                             skip_tracker: SkipTrackerThroughPotals = skip_trackers[i],
                             ) -> Batch:
                     with use_skip_tracker(skip_tracker):
+                        # HERE is where the forward pass happens!
+                        # batch.call(partition) internally calls partition(batch.value)
+                        # which invokes nn.Sequential.__call__() that:
+                        # 1. Iterates through each layer in the partition
+                        # 2. Calls layer.forward() for each layer sequentially  
+                        # 3. Passes output of one layer as input to the next
                         return batch.call(partition)
 
                 task = Task(streams[j], compute=compute, finalize=None)

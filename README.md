@@ -92,6 +92,10 @@ references.
 
 [rtd]: https://torchgpipe.readthedocs.io/
 
+### Understanding the Code
+
+- [docs/forward_pass_flow.md](docs/forward_pass_flow.md) - Explains where and how the forward pass through individual layers happens in `Pipeline.compute()`
+
 ### Debugging and Logging
 
 See [docs/layer_logging.md](docs/layer_logging.md) for a guide on how to log and track which layers (partitions) are currently executing in the pipeline. This is useful for debugging and understanding pipeline execution flow.
