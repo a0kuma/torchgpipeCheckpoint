@@ -86,6 +86,10 @@ The ``Copy`` class is **flexible** and works in **all scenarios**:
    .. code-block:: python
 
        from torchgpipe.stream import CPUStream
+       import torch
+
+       # Define a CUDA stream
+       cuda_stream = torch.cuda.current_stream(torch.device('cuda:0'))
 
        # CPU to GPU
        cpu_tensor = torch.randn(10, 20, device='cpu')
