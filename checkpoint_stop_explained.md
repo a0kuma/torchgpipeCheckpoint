@@ -138,13 +138,13 @@ Clock | Micro-batch operations
 
 ## Memory vs Computation Trade-off
 
+> **Note on overhead**: The ~25% computation overhead figures below are typical estimates from the torchgpipe documentation. Actual overhead varies by model architecture, configuration, and hardware.
+
 | Mode | Memory Usage | Computation | Use Case |
 |------|-------------|-------------|----------|
 | `always` | Lowest | ~25% overhead on all batches | When memory is extremely limited |
 | `except_last` | Low | ~25% overhead on (chunks-1) batches | **Recommended default** - good balance |
 | `never` | Highest | No overhead | When memory is not a concern, or chunks=1 |
-
-> **Note**: Actual overhead varies by model architecture and configuration. The ~25% figure is mentioned in the torchgpipe documentation as a typical estimate.
 
 ## Logging
 
@@ -175,7 +175,7 @@ Note: Micro-batches **NOT** using checkpointing are logged at INFO level for vis
 
 ## References
 
-- Main implementation: `torchgpipe/pipeline.py` (`Pipeline.__init__` and `Pipeline.compute` method)
+- Main implementation: `torchgpipe/pipeline.py` (`Pipeline.__init__` for parameter storage, `Pipeline.compute` for checkpoint logic)
 - Checkpoint logic: `torchgpipe/checkpoint.py` (`Checkpointing`, `Checkpoint`, and `Recompute` classes)
 - User interface: `torchgpipe/gpipe.py` (`GPipe.forward` method)
 - Documentation: `docs/guide.rst` (Checkpointing section)
