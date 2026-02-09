@@ -123,7 +123,7 @@ The default `checkpoint='except_last'` mode is chosen because:
 2. **Memory saved by checkpointing the last batch would be immediately needed anyway**
 3. **Avoiding recomputation for the last batch reduces unnecessary overhead**
 
-In a typical pipeline schedule with m=8 micro-batches and n=4 partitions:
+In a typical pipeline schedule with 8 micro-batches (chunks=8) and 4 partitions:
 ```
 Clock | Micro-batch operations
 ------|-------------------------------------------------------
@@ -131,8 +131,8 @@ Clock | Micro-batch operations
 1     | (1,0) (0,1)
 2     | (2,0) (1,1) (0,2)
 ...   | ...
-10    |             (7,2) (6,3)  <- Last batch reaches last partition
-11    |                   (7,3)  <- Last batch completes
+10    |             (7,2) (6,3)  <- Last micro-batch reaches last partition
+11    |                   (7,3)  <- Last micro-batch completes
       | [Backpropagation begins immediately after]
 ```
 
@@ -175,7 +175,9 @@ Note: Micro-batches **NOT** using checkpointing are logged at INFO level for vis
 
 ## References
 
-- Main implementation: `torchgpipe/pipeline.py` (`Pipeline.__init__` for parameter storage, `Pipeline.compute` for checkpoint logic)
+- Main implementation: `torchgpipe/pipeline.py` 
+  - `Pipeline.__init__`: Stores `checkpoint_stop` as an instance variable
+  - `Pipeline.compute`: Uses `checkpoint_stop` to determine checkpointing behavior
 - Checkpoint logic: `torchgpipe/checkpoint.py` (`Checkpointing`, `Checkpoint`, and `Recompute` classes)
-- User interface: `torchgpipe/gpipe.py` (`GPipe.forward` method)
+- User interface: `torchgpipe/gpipe.py` (`GPipe.forward` method calculates `checkpoint_stop` value)
 - Documentation: `docs/guide.rst` (Checkpointing section)
