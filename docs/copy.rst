@@ -41,13 +41,13 @@ In torchgpipe:
 .. code-block:: python
 
     import torch
-    
+
     # Default stream on cuda:0
     default = torch.cuda.current_stream(torch.device('cuda:0'))
-    
+
     # Create a new stream for concurrent operations
     stream1 = torch.cuda.Stream(torch.device('cuda:0'))
-    
+
     # Operations on different streams can run concurrently
     with torch.cuda.stream(stream1):
         # This runs on stream1
@@ -61,22 +61,22 @@ The ``Copy`` class is **flexible** and works in **all scenarios**:
 1. **Same GPU, Different Streams**: Copies tensors between different streams on the same GPU
 
    .. code-block:: python
-   
+
        # Both streams are on cuda:0
        prev_stream = torch.cuda.current_stream(torch.device('cuda:0'))
        next_stream = torch.cuda.Stream(torch.device('cuda:0'))
-       
+
        # Copy manages the tensor on different streams of the same GPU
        output, = Copy.apply(prev_stream, next_stream, input_tensor)
 
 2. **Different GPUs**: Copies tensors between different GPU devices
 
    .. code-block:: python
-   
+
        # prev_stream is on cuda:0, next_stream is on cuda:1
        prev_stream = torch.cuda.current_stream(torch.device('cuda:0'))
        next_stream = torch.cuda.current_stream(torch.device('cuda:1'))
-       
+
        input_tensor = torch.randn(10, 20, device='cuda:0')
        output, = Copy.apply(prev_stream, next_stream, input_tensor)
        # output is now on cuda:1
@@ -84,9 +84,9 @@ The ``Copy`` class is **flexible** and works in **all scenarios**:
 3. **CPU to/from GPU**: Handles transfers between CPU and CUDA devices
 
    .. code-block:: python
-   
+
        from torchgpipe.stream import CPUStream
-       
+
        # CPU to GPU
        cpu_tensor = torch.randn(10, 20, device='cpu')
        output, = Copy.apply(CPUStream, cuda_stream, cpu_tensor)
