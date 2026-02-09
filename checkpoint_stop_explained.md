@@ -10,7 +10,7 @@ Checkpointing is a memory optimization technique used in GPipe that:
 - **During forward propagation**: Discards intermediate activations (except at partition boundaries)
 - **During backward propagation**: Recomputes the forward propagation to regenerate the activations needed for gradient calculation
 
-This technique significantly reduces memory usage at the cost of ~25% additional computation time.
+This technique significantly reduces memory usage at the cost of approximately 25% additional computation time (actual overhead varies by model architecture and configuration).
 
 ## How checkpoint_stop Works
 
@@ -140,9 +140,11 @@ Clock | Micro-batch operations
 
 | Mode | Memory Usage | Computation | Use Case |
 |------|-------------|-------------|----------|
-| `always` | Lowest | +25% overhead on all batches | When memory is extremely limited |
-| `except_last` | Low | +25% overhead on (chunks-1) batches | **Recommended default** - good balance |
+| `always` | Lowest | ~25% overhead on all batches* | When memory is extremely limited |
+| `except_last` | Low | ~25% overhead on (chunks-1) batches* | **Recommended default** - good balance |
 | `never` | Highest | No overhead | When memory is not a concern, or chunks=1 |
+
+*Actual overhead varies by model architecture and configuration. The ~25% figure is mentioned in the torchgpipe documentation as a typical estimate.
 
 ## Logging
 
