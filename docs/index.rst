@@ -40,6 +40,7 @@ Documentations
    gpipe
    guide
    api
+   copy
    benchmarks
    changelog
 
