@@ -16,6 +16,84 @@ Class Definition
 
 Located in: ``torchgpipe/copy.py``
 
+FAQ (Frequently Asked Questions)
+---------------------------------
+
+What is a stream?
+~~~~~~~~~~~~~~~~~
+
+A **stream** in CUDA is a sequence of operations that execute in order on a GPU device. Multiple streams can run concurrently, allowing different operations to overlap and execute in parallel on the same GPU.
+
+Think of streams as independent execution queues:
+
+- **Default Stream**: Every CUDA device has a default stream where operations run if no other stream is specified
+- **Custom Streams**: You can create additional streams to run operations concurrently
+- **Concurrency**: Operations in different streams can execute simultaneously, enabling overlap of computation and data transfer
+
+In torchgpipe:
+
+- Each stream is represented by the ``AbstractStream`` type, which can be either a ``torch.cuda.Stream`` (for CUDA devices) or ``CPUStream`` (a placeholder for CPU operations)
+- The ``Copy`` class uses streams to enable concurrent data copying while other computations are running
+- This is critical for pipeline parallelism because it minimizes GPU idle time
+
+**Example:**
+
+.. code-block:: python
+
+    import torch
+    
+    # Default stream on cuda:0
+    default = torch.cuda.current_stream(torch.device('cuda:0'))
+    
+    # Create a new stream for concurrent operations
+    stream1 = torch.cuda.Stream(torch.device('cuda:0'))
+    
+    # Operations on different streams can run concurrently
+    with torch.cuda.stream(stream1):
+        # This runs on stream1
+        result = tensor.matmul(tensor)
+
+Does Copy work on the same GPU or different GPUs?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``Copy`` class is **flexible** and works in **all scenarios**:
+
+1. **Same GPU, Different Streams**: Copies tensors between different streams on the same GPU
+
+   .. code-block:: python
+   
+       # Both streams are on cuda:0
+       prev_stream = torch.cuda.current_stream(torch.device('cuda:0'))
+       next_stream = torch.cuda.Stream(torch.device('cuda:0'))
+       
+       # Copy manages the tensor on different streams of the same GPU
+       output, = Copy.apply(prev_stream, next_stream, input_tensor)
+
+2. **Different GPUs**: Copies tensors between different GPU devices
+
+   .. code-block:: python
+   
+       # prev_stream is on cuda:0, next_stream is on cuda:1
+       prev_stream = torch.cuda.current_stream(torch.device('cuda:0'))
+       next_stream = torch.cuda.current_stream(torch.device('cuda:1'))
+       
+       input_tensor = torch.randn(10, 20, device='cuda:0')
+       output, = Copy.apply(prev_stream, next_stream, input_tensor)
+       # output is now on cuda:1
+
+3. **CPU to/from GPU**: Handles transfers between CPU and CUDA devices
+
+   .. code-block:: python
+   
+       from torchgpipe.stream import CPUStream
+       
+       # CPU to GPU
+       cpu_tensor = torch.randn(10, 20, device='cpu')
+       output, = Copy.apply(CPUStream, cuda_stream, cpu_tensor)
+       # output is now on GPU
+
+**Key Point**: The actual device transfer happens through ``x.to(get_device(next_stream))`` in the forward pass. The ``Copy`` class automatically determines the target device from the ``next_stream`` parameter and handles the transfer accordingly, while also managing stream synchronization and memory lifetimes with ``record_stream`` calls.
+
 Purpose
 -------
 
