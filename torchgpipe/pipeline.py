@@ -1,6 +1,5 @@
 """The pipeline parallelism of GPipe."""
 import logging
-logging.basicConfig(level=logging.INFO)
 from queue import Queue
 from types import TracebackType
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple, Type, Union, cast
