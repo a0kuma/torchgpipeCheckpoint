@@ -173,7 +173,7 @@ Note: Micro-batches **NOT** using checkpointing are logged at INFO level for vis
 
 ## References
 
-- Main implementation: `torchgpipe/pipeline.py` (lines 81-82, 159, 199-237)
-- Checkpoint logic: `torchgpipe/checkpoint.py`
-- User interface: `torchgpipe/gpipe.py` (lines 360-367)
+- Main implementation: `torchgpipe/pipeline.py` (`Pipeline.__init__` and `Pipeline.compute` method)
+- Checkpoint logic: `torchgpipe/checkpoint.py` (`Checkpointing`, `Checkpoint`, and `Recompute` classes)
+- User interface: `torchgpipe/gpipe.py` (`GPipe.forward` method)
 - Documentation: `docs/guide.rst` (Checkpointing section)
