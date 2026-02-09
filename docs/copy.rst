@@ -32,7 +32,7 @@ Think of streams as independent execution queues:
 
 In torchgpipe:
 
-- Each stream is represented by the ``AbstractStream`` type, which can be either a ``torch.cuda.Stream`` (for CUDA devices) or ``CPUStream`` (a placeholder for CPU operations).
+- The ``AbstractStream`` type is a Union type that encompasses both ``torch.cuda.Stream`` (for CUDA devices) and ``CPUStream`` (a singleton placeholder for CPU operations).
 - The ``Copy`` class uses streams to enable concurrent data copying while other computations are running.
 - This is critical for pipeline parallelism because it minimizes GPU idle time.
 
