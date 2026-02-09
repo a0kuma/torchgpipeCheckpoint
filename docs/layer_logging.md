@@ -1,21 +1,33 @@
 # How to Log Which Layer is Currently Running in the Compute Function
 
-This guide explains how to track and log which layer (partition) is currently being executed in the `Pipeline.compute()` function of torchgpipe.
+This guide explains how to track and log which individual **layer** (not partition) is currently being executed in the `Pipeline.compute()` function of torchgpipe.
 
-## Understanding the Compute Function
+## Understanding Layers vs Partitions
 
-The `compute` function in `torchgpipe/pipeline.py` is responsible for executing micro-batches across different partitions (layers) of your model in parallel. Each partition represents a group of consecutive layers that run on a single device.
+**Important distinction:**
+- A **layer** is a single neural network module (e.g., `nn.Linear`, `nn.ReLU`, `nn.Conv2d`)
+- A **partition** is a group of consecutive layers that run together on the same device
+- When you split a model with `balance=[2, 3, 1]`, you're creating 3 partitions:
+  - Partition 0 contains the first 2 layers
+  - Partition 1 contains the next 3 layers
+  - Partition 2 contains the last 1 layer
+
+The `compute` function processes micro-batches through partitions, but each partition executes multiple layers sequentially.
+
+## The Compute Function
+
+The `compute` function in `torchgpipe/pipeline.py` is responsible for executing micro-batches across different partitions of your model in parallel. Each partition executes as a unit, but internally it runs multiple layers sequentially.
 
 ### Key Parameters
 
 - **schedule**: A list of tuples `(i, j)` where:
   - `i` is the micro-batch index (which micro-batch is being processed)
-  - `j` is the partition index (which layer/partition is being used)
-- **partitions**: The actual neural network layers/modules being executed
+  - `j` is the partition index (which partition is being used)
+- **partitions**: A list of `nn.Sequential` modules, each containing multiple layers
 
-## Built-in Logging
+## Built-in Partition-Level Logging
 
-The `compute` function already includes logging functionality. By default, logging is configured at the INFO level in `pipeline.py`:
+The `compute` function already includes partition-level logging functionality. By default, logging is configured at the INFO level in `pipeline.py`:
 
 ```python
 import logging
@@ -23,106 +35,123 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 ```
 
-### Existing Log Messages
+### Existing Partition-Level Log Messages
 
 The function logs information about:
 - Which micro-batch (`i`) is being processed
-- Which partition/layer (`j`) is executing it
+- Which partition (`j`) is executing it
 - Whether checkpointing is enabled for that micro-batch
 
-## How to Enable Layer Logging
+**This only tells you which partition is running, not which individual layer.**
 
-### Method 1: Use Existing Logging (Recommended)
+## How to Enable Layer-Level Logging
 
-The easiest way to see which layer is running is to enable Python logging at the appropriate level:
+To track individual layer execution within partitions, use the `register_layer_logging_hooks` function:
+
+### Method 1: Using register_layer_logging_hooks (Recommended for Layer Tracking)
+
+```python
+import logging
+from torchgpipe import GPipe, register_layer_logging_hooks
+
+# Set logging level to DEBUG to see individual layer executions
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Create and wrap your model
+model = nn.Sequential(layer1, layer2, layer3, layer4, layer5)
+model = GPipe(model, balance=[2, 3], chunks=4)
+
+# Register hooks to log individual layer execution
+hooks = register_layer_logging_hooks(model.partitions)
+
+# Training/inference - logs will show individual layers
+for input in data_loader:
+    output = model(input)
+
+# Clean up hooks when done (optional but recommended)
+for hook in hooks:
+    hook.remove()
+```
+
+**Example output:**
+```
+INFO - Micro-batch 0 (partition 0): checkpoint_stop=0, using_checkpointing=False
+DEBUG - Executing layer '0' in partition 0: Linear
+DEBUG - Executing layer '1' in partition 0: ReLU
+INFO - Micro-batch 0 (partition 1): checkpoint_stop=0, using_checkpointing=False
+DEBUG - Executing layer '2' in partition 1: Linear
+DEBUG - Executing layer '3' in partition 1: ReLU
+DEBUG - Executing layer '4' in partition 1: Linear
+```
+
+### Method 2: Partition-Level Logging Only (No Layer Details)
+
+If you only need to know which partition is running (not individual layers), simply enable logging:
 
 ```python
 import logging
 
-# Set logging level to INFO to see checkpoint information
+# Set logging level to INFO to see partition execution
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Or set logging level to DEBUG to see all layer executions
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-```
-
-**Example output:**
-```
-2024-02-09 12:00:00 - torchgpipe.pipeline - INFO - Micro-batch 0 (partition 0): checkpoint_stop=2, using_checkpointing=False
-2024-02-09 12:00:01 - torchgpipe.pipeline - DEBUG - Micro-batch 1 (partition 1): checkpoint_stop=2, using_checkpointing=True
-```
-
-### Method 2: Add Custom Logging
-
-If you need more detailed logging, you can modify the `compute` function to add additional log statements. Here's what the relevant section looks like:
-
-```python
-for i, j in schedule:
-    batch = batches[i]
-    partition = partitions[j]
-    
-    # Log which layer is starting
-    logger.info(f"Starting execution: micro-batch {i}, partition {j}")
-    
-    # ... rest of the computation logic ...
-```
-
-### Method 3: Add a Custom Logger to Your Training Script
-
-You can also add logging in your own training code:
-
-```python
-import logging
 from torchgpipe import GPipe
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("training.log"),
-        logging.StreamHandler()
-    ]
-)
-
-# Create your model
 model = nn.Sequential(layer1, layer2, layer3, layer4)
-model = GPipe(model, balance=[1, 1, 1, 1], chunks=8)
+model = GPipe(model, balance=[2, 2], chunks=4)
 
-# Training loop - logs will automatically appear
-for input in data_loader:
-    output = model(input)
+# Logs will automatically appear showing partition execution
+output = model(input)
+```
+
+**Example output (partition-level only):**
+```
+INFO - Micro-batch 0 (partition 0): checkpoint_stop=0, using_checkpointing=False
+INFO - Micro-batch 1 (partition 0): checkpoint_stop=0, using_checkpointing=False
+INFO - Micro-batch 0 (partition 1): checkpoint_stop=0, using_checkpointing=False
 ```
 
 ## Understanding the Output
 
-When you enable logging, you'll see messages like:
+### Partition-Level Logs
 
+When you see:
 ```
-Micro-batch 0 (partition 0): checkpoint_stop=2, using_checkpointing=True
+Micro-batch 0 (partition 1): checkpoint_stop=2, using_checkpointing=False
 ```
 
 This tells you:
 - **Micro-batch 0**: The first micro-batch is being processed
-- **partition 0**: It's being processed by the first partition (layer group)
+- **partition 1**: It's being processed by the second partition (0-indexed)
 - **checkpoint_stop=2**: Checkpointing is enabled for micro-batches 0 and 1
-- **using_checkpointing=True**: This specific micro-batch is using checkpointing
+- **using_checkpointing=False**: This specific micro-batch is NOT using checkpointing
+
+### Layer-Level Logs
+
+When you see:
+```
+Executing layer '2' in partition 1: Linear
+```
+
+This tells you:
+- **layer '2'**: The layer's index/name within the original model
+- **partition 1**: This layer is part of the second partition
+- **Linear**: The type of layer being executed (`nn.Linear`, `nn.ReLU`, etc.)
 
 ## Log Levels
 
-torchgpipe uses different log levels for different information:
+torchgpipe uses different log levels:
 
-- **DEBUG**: Logs all micro-batch/partition executions that use checkpointing
-- **INFO**: Logs micro-batch/partition executions that do NOT use checkpointing
-- **WARNING/ERROR**: Used for issues or exceptions
+- **DEBUG**: Individual layer executions (only when using `register_layer_logging_hooks`)
+- **INFO**: Partition-level execution logs
+- **WARNING/ERROR**: Issues or exceptions
 
-To see all layer executions, use `logging.DEBUG`. For production use, `logging.INFO` provides important information without being too verbose.
+To see layer execution, use `logging.DEBUG`. For partition-level info only, use `logging.INFO`.
 
 ## Advanced: Logging to File
 
@@ -132,7 +161,7 @@ To save logs to a file for later analysis:
 import logging
 
 # Create a file handler
-file_handler = logging.FileHandler('torchgpipe_execution.log')
+file_handler = logging.FileHandler('layer_execution.log')
 file_handler.setLevel(logging.DEBUG)
 
 # Create a console handler for errors only
@@ -153,34 +182,37 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 ```
 
-## Example: Complete Training Script with Logging
+## Example: Complete Training Script with Layer Logging
 
 ```python
 import torch
 import torch.nn as nn
 import logging
-from torchgpipe import GPipe
+from torchgpipe import GPipe, register_layer_logging_hooks
 
-# Configure logging first
+# Configure logging first - DEBUG level to see individual layers
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Define your model
-class MyModel(nn.Sequential):
-    def __init__(self):
-        super().__init__(
-            nn.Linear(100, 100),
-            nn.ReLU(),
-            nn.Linear(100, 100),
-            nn.ReLU(),
-            nn.Linear(100, 10)
-        )
+# Define your model with clear layer structure
+model = nn.Sequential(
+    nn.Linear(100, 100),  # Layer 0
+    nn.ReLU(),            # Layer 1
+    nn.Linear(100, 100),  # Layer 2
+    nn.ReLU(),            # Layer 3
+    nn.Linear(100, 10)    # Layer 4
+)
 
-# Create GPipe model
-model = MyModel()
+# Create GPipe model - balance=[2, 2, 1] means:
+# - Partition 0: layers 0-1 (Linear + ReLU)
+# - Partition 1: layers 2-3 (Linear + ReLU)
+# - Partition 2: layer 4 (Linear)
 model = GPipe(model, balance=[2, 2, 1], chunks=4)
+
+# Register layer logging hooks
+hooks = register_layer_logging_hooks(model.partitions)
 
 # Training loop
 optimizer = torch.optim.Adam(model.parameters())
@@ -192,26 +224,33 @@ for epoch in range(10):
     targets = torch.randint(0, 10, (32,))
     
     optimizer.zero_grad()
-    outputs = model(inputs)  # Logs will appear here showing layer execution
+    outputs = model(inputs)  # Layer-by-layer logs will appear here
     loss = criterion(outputs, targets)
     loss.backward()
     optimizer.step()
     
     print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+# Clean up hooks
+for hook in hooks:
+    hook.remove()
 ```
 
 ## Summary
 
-To know which layer is currently running in the `compute` function:
+To know which **individual layer** is currently running in the `compute` function:
 
-1. **Simplest approach**: Enable logging at the INFO or DEBUG level
-2. **The logging already exists**: The code in `pipeline.py` already logs partition/layer execution
-3. **Key information logged**: Micro-batch index, partition index, and checkpointing status
-4. **Customize as needed**: You can add more detailed logging if the built-in logs aren't sufficient
+1. **Use `register_layer_logging_hooks(model.partitions)`** - This registers forward hooks on each layer
+2. **Set logging to DEBUG level** - `logging.basicConfig(level=logging.DEBUG)`
+3. **Run your model** - You'll see logs for both partitions and individual layers
+4. **Clean up when done** - Remove hooks with `hook.remove()` for each hook
 
-The partition index `j` directly corresponds to which group of layers is being executed. If you split your model with `balance=[2, 2, 1]`, then:
-- Partition 0 = first 2 layers
-- Partition 1 = next 2 layers  
-- Partition 2 = last 1 layer
+### Key Points:
 
-By monitoring the log output, you can track exactly which partition (layer group) is processing which micro-batch at any given time.
+- **Partitions** are groups of layers, not individual layers
+- The partition index `j` tells you which group of layers is executing
+- To see **individual layers**, you must use `register_layer_logging_hooks`
+- Layer names/indices correspond to the original model's layer structure
+- Each partition executes its layers sequentially, even though partitions run in parallel
+
+By using layer-level logging, you can track exactly which layer is processing which micro-batch at any given time, giving you fine-grained visibility into pipeline execution.

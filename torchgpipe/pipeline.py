@@ -17,7 +17,7 @@ from torchgpipe.skip.tracker import SkipTrackerThroughPotals, use_skip_tracker
 from torchgpipe.stream import AbstractStream, current_stream, use_device
 from torchgpipe.worker import Task, spawn_workers
 
-__all__: List[str] = []
+__all__: List[str] = ['register_layer_logging_hooks']
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,43 @@ def clock_cycles(m: int, n: int) -> Iterable[List[Tuple[int, int]]]:
     # 4             (2,2)
     for k in range(m+n-1):
         yield [(k-j, j) for j in range(max(1+k-m, 0), min(1+k, n))]
+
+
+def register_layer_logging_hooks(partitions: List[nn.Sequential]) -> List:
+    """Register forward hooks on individual layers within partitions for logging.
+    
+    This allows tracking which individual layer is executing within each partition.
+    A partition contains multiple layers, and this function adds hooks to log
+    each layer's execution.
+    
+    Args:
+        partitions: List of partitions (each partition is an nn.Sequential of layers)
+        
+    Returns:
+        List of hook handles that can be used to remove hooks later
+        
+    Example:
+        >>> hooks = register_layer_logging_hooks(model.partitions)
+        >>> # Run your model...
+        >>> # Remove hooks when done
+        >>> for hook in hooks:
+        >>>     hook.remove()
+    """
+    hooks = []
+    
+    for partition_idx, partition in enumerate(partitions):
+        for layer_name, layer in partition.named_children():
+            def make_hook(part_idx, layer_id):
+                def hook(module, input, output):
+                    logger.debug(
+                        f"Executing layer '{layer_id}' in partition {part_idx}: {module.__class__.__name__}"
+                    )
+                return hook
+            
+            handle = layer.register_forward_hook(make_hook(partition_idx, layer_name))
+            hooks.append(handle)
+    
+    return hooks
 
 
 class Pipeline:
