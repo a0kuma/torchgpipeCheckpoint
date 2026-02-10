@@ -90,6 +90,9 @@ for input in data_loader:
 Visit [torchgpipe.readthedocs.io][rtd] for more information including the API
 references.
 
+For a detailed explanation of how neural networks are partitioned (cut) in
+torchgpipe, see [PARTITIONING.md](PARTITIONING.md).
+
 [rtd]: https://torchgpipe.readthedocs.io/
 
 ## Benchmarking
