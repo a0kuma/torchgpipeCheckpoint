@@ -82,6 +82,9 @@ for input in data_loader:
 API 문서를 비롯한 자세한 문서는 [torchgpipe.readthedocs.io][rtd]에서 확인할 수
 있습니다.
 
+torchgpipe에서 신경망이 어떻게 분할(cut)되는지에 대한 자세한 설명은
+[PARTITIONING.md](PARTITIONING.md)를 참조하십시오.
+
 [rtd]: https://torchgpipe.readthedocs.io/
 
 ## 벤치마크
