@@ -8,6 +8,7 @@ import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 from torch.optim import SGD
+from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
 
 import torchgpipe
 from torchgpipe import GPipe
@@ -168,12 +169,26 @@ def cli(ctx: click.Context,
         for d in _devices:
             torch.cuda.reset_max_memory_cached(d)
 
-        for _ in range(2):
-            output = model(input)
-            output = cast(Tensor, output)
-            loss = F.binary_cross_entropy_with_logits(output, target)
-            loss.backward()
-            optimizer.step()
+        # Use PyTorch Profiler with memory profiling
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            profile_memory=True,
+            record_shapes=True,
+            with_stack=True,
+            on_trace_ready=tensorboard_trace_handler('./log/unet_memory'),
+        ) as prof:
+            for _ in range(2):
+                output = model(input)
+                output = cast(Tensor, output)
+                loss = F.binary_cross_entropy_with_logits(output, target)
+                loss.backward()
+                optimizer.step()
+                prof.step()
+
+        # Print profiler memory summary
+        hr()
+        click.echo("PyTorch Profiler Memory Summary:")
+        click.echo(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
 
         max_memory = 0
         for d in _devices:

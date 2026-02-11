@@ -201,7 +201,7 @@ class Pipeline:
             # Log checkpoint decision for each micro-batch
             # Use INFO level to highlight micro-batches NOT using checkpointing
             if checkpoint:
-                logger.debug(
+                logger.info(
                     f"Micro-batch {i} (partition {j}): "
                     f"checkpoint_stop={checkpoint_stop}, "
                     f"using_checkpointing=True"
