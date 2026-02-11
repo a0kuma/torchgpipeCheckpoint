@@ -90,6 +90,9 @@ for input in data_loader:
 Visit [torchgpipe.readthedocs.io][rtd] for more information including the API
 references.
 
+**Common Questions:**
+- [Does the number of partitions have to be the same as the number of GPUs?](docs/partitions-vs-gpus.md) ([中文版](docs/partitions-vs-gpus.zh-TW.md))
+
 [rtd]: https://torchgpipe.readthedocs.io/
 
 ## Benchmarking
