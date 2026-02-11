@@ -82,6 +82,9 @@ for input in data_loader:
 API 문서를 비롯한 자세한 문서는 [torchgpipe.readthedocs.io][rtd]에서 확인할 수
 있습니다.
 
+**자주 묻는 질문:**
+- [분區(partition)의 數量跟 GPU 的數量一定一樣嗎？](docs/partitions-vs-gpus.md) ([中文版](docs/partitions-vs-gpus.zh-TW.md))
+
 [rtd]: https://torchgpipe.readthedocs.io/
 
 ## 벤치마크
