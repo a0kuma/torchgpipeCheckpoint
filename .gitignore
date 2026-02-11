@@ -142,3 +142,9 @@ tags
 [._]*.un~
 
 # End of https://www.gitignore.io/api/vim,python
+
+# Large trace/profiling artifacts
+benchmarks/unet-memory/log/
+*.pt.trace.json
+*.trace.json
+
